@@ -1,4 +1,4 @@
-import React, { useState, useRef, useCallback, useEffect } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 
 // ─── SAMPLE DATA (replaced by admin panel in production) ───
 const SAMPLE_PUZZLES = [
@@ -59,7 +59,6 @@ const SAMPLE_PUZZLES = [
   },
 ];
 
-// ─── UTILS ───
 const shuffleArray = (arr) => {
   const a = [...arr];
   for (let i = a.length - 1; i > 0; i--) {
@@ -69,33 +68,31 @@ const shuffleArray = (arr) => {
   return a;
 };
 
-const getScoreEmoji = (diff) => {
-  if (diff === 0) return '🟩';
-  return '🟥';
-};
+const getScoreEmoji = (diff) => diff === 0 ? '🟩' : '🟥';
 
-// ─── MAIN COMPONENT ───
 export default function TheLineup() {
-  const [screen, setScreen] = useState('menu'); // menu | play | result
+  const [screen, setScreen] = useState('menu');
   const [puzzle, setPuzzle] = useState(null);
   const [items, setItems] = useState([]);
   const [attempt, setAttempt] = useState(1);
-  const [maxAttempts] = useState(3);
+  const maxAttempts = 3;
   const [feedback, setFeedback] = useState(null);
   const [history, setHistory] = useState([]);
   const [solved, setSolved] = useState(false);
-  const [dragging, setDragging] = useState(null);
-  const [dragOver, setDragOver] = useState(null);
-  const [showShare, setShowShare] = useState(false);
   const [copied, setCopied] = useState(false);
-  const [touchStart, setTouchStart] = useState(null);
   const [completedRounds, setCompletedRounds] = useState([]);
   const [allResults, setAllResults] = useState({});
-  const listRef = useRef(null);
 
-  const currentUnlocked = completedRounds.length; // index of the next playable puzzle
+  // Drag state
+  const [activeItem, setActiveItem] = useState(null);
+  const [dragY, setDragY] = useState(0);
+  const dragStartY = useRef(0);
+  const dragItemHeight = useRef(72);
+  const itemsRef = useRef([]);
+  const itemsCopy = useRef([]);
 
-  // Pick a random puzzle on start
+  const currentUnlocked = completedRounds.length;
+
   const startGame = (p) => {
     setPuzzle(p);
     setItems(shuffleArray(p.items.map((item, i) => ({ ...item, correctIndex: i, id: `item-${i}` }))));
@@ -103,9 +100,19 @@ export default function TheLineup() {
     setFeedback(null);
     setHistory([]);
     setSolved(false);
-    setShowShare(false);
     setCopied(false);
+    setActiveItem(null);
     setScreen('play');
+  };
+
+  const moveItem = (fromIndex, toIndex) => {
+    if (toIndex < 0 || toIndex >= items.length || feedback) return;
+    setItems(prev => {
+      const next = [...prev];
+      const [moved] = next.splice(fromIndex, 1);
+      next.splice(toIndex, 0, moved);
+      return next;
+    });
   };
 
   const submitGuess = () => {
@@ -142,78 +149,89 @@ export default function TheLineup() {
     }
   };
 
-  // ─── DRAG HANDLERS (pointer-based for touch+mouse) ───
-  const handleDragStart = (index) => {
-    setDragging(index);
-  };
-
-  const handleDragEnter = (index) => {
-    if (dragging === null || dragging === index) return;
-    setDragOver(index);
-    const newItems = [...items];
-    const dragItem = newItems[dragging];
-    newItems.splice(dragging, 1);
-    newItems.splice(index, 0, dragItem);
-    setItems(newItems);
-    setDragging(index);
-  };
-
-  const handleDragEnd = () => {
-    setDragging(null);
-    setDragOver(null);
-  };
-
-  // Touch drag
-  const handleTouchStart = (e, index) => {
-    setDragging(index);
-    setTouchStart({ y: e.touches[0].clientY, index });
-  };
-
-  const handleTouchMove = useCallback((e) => {
-    if (!touchStart || !listRef.current) return;
+  // ─── POINTER DRAG ───
+  const handlePointerDown = (e, index) => {
+    if (feedback) return;
     e.preventDefault();
-    const touch = e.touches[0];
-    const listItems = listRef.current.querySelectorAll('[data-drag-item]');
-    for (let i = 0; i < listItems.length; i++) {
-      const rect = listItems[i].getBoundingClientRect();
-      if (touch.clientY >= rect.top && touch.clientY <= rect.bottom && i !== dragging) {
-        handleDragEnter(i);
-        break;
-      }
-    }
-  }, [touchStart, dragging]);
-
-  const handleTouchEnd = () => {
-    setDragging(null);
-    setDragOver(null);
-    setTouchStart(null);
+    const el = itemsRef.current[index];
+    if (el) dragItemHeight.current = el.getBoundingClientRect().height + 8;
+    setActiveItem(index);
+    dragStartY.current = e.clientY;
+    setDragY(0);
+    itemsCopy.current = [...items];
   };
 
   useEffect(() => {
-    const el = listRef.current;
-    if (el) {
-      el.addEventListener('touchmove', handleTouchMove, { passive: false });
-      return () => el.removeEventListener('touchmove', handleTouchMove);
-    }
-  }, [handleTouchMove]);
+    if (activeItem === null) return;
 
+    let currentActive = activeItem;
+    let currentStartY = dragStartY.current;
+
+    const handleMove = (e) => {
+      e.preventDefault();
+      const clientY = e.clientY;
+      const delta = clientY - currentStartY;
+      setDragY(delta);
+
+      const threshold = dragItemHeight.current * 0.5;
+      if (delta > threshold && currentActive < items.length - 1) {
+        setItems(prev => {
+          const next = [...prev];
+          const [moved] = next.splice(currentActive, 1);
+          next.splice(currentActive + 1, 0, moved);
+          return next;
+        });
+        currentActive = currentActive + 1;
+        setActiveItem(currentActive);
+        currentStartY = currentStartY + dragItemHeight.current;
+        dragStartY.current = currentStartY;
+        setDragY(delta - dragItemHeight.current);
+      } else if (delta < -threshold && currentActive > 0) {
+        setItems(prev => {
+          const next = [...prev];
+          const [moved] = next.splice(currentActive, 1);
+          next.splice(currentActive - 1, 0, moved);
+          return next;
+        });
+        currentActive = currentActive - 1;
+        setActiveItem(currentActive);
+        currentStartY = currentStartY - dragItemHeight.current;
+        dragStartY.current = currentStartY;
+        setDragY(delta + dragItemHeight.current);
+      }
+    };
+
+    const handleEnd = () => {
+      setActiveItem(null);
+      setDragY(0);
+    };
+
+    document.addEventListener('pointermove', handleMove, { passive: false });
+    document.addEventListener('pointerup', handleEnd);
+    document.addEventListener('pointercancel', handleEnd);
+
+    return () => {
+      document.removeEventListener('pointermove', handleMove);
+      document.removeEventListener('pointerup', handleEnd);
+      document.removeEventListener('pointercancel', handleEnd);
+    };
+  }, [activeItem, items.length]);
+
+  // ─── SHARE ───
   const shareText = () => {
     if (!puzzle) return '';
     const title = `THE LINEUP: ${puzzle.category}`;
     const grid = history.map((row, i) => `${i + 1}. ${row.join('')}`).join('\n');
-    const result = solved ? `✅ Solved in ${history.length}/${maxAttempts}!` : `❌ ${maxAttempts}/${maxAttempts}`;
-    return `${title}\n${puzzle.prompt}\n\n${grid}\n${result}\n\nPlay at buzzfeed.com/the-lineup`;
+    const res = solved ? `✅ Solved in ${history.length}/${maxAttempts}!` : `❌ ${maxAttempts}/${maxAttempts}`;
+    return `${title}\n${puzzle.prompt}\n\n${grid}\n${res}\n\nPlay at buzzfeed.com/the-lineup`;
   };
 
   const handleShare = async () => {
-    const text = shareText();
     try {
-      await navigator.clipboard.writeText(text);
+      await navigator.clipboard.writeText(shareText());
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
-    } catch {
-      // fallback
-    }
+    } catch (e) { void e; }
   };
 
   const handleShareAll = async () => {
@@ -227,305 +245,34 @@ export default function TheLineup() {
     const totalSolved = Object.values(allResults).filter(r => r.solved).length;
     lines.push(`\n${totalSolved}/5 rounds solved`);
     lines.push('\nPlay at buzzfeed.com/the-lineup');
-    const text = lines.join('\n');
     try {
-      await navigator.clipboard.writeText(text);
+      await navigator.clipboard.writeText(lines.join('\n'));
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
-    } catch {}
+    } catch (e) { void e; }
   };
 
-  // ─── STYLES ───
   const font = "'Instrument Sans', 'Helvetica Neue', Helvetica, sans-serif";
   const mono = "'JetBrains Mono', 'SF Mono', 'Fira Code', monospace";
 
-  const styles = {
-    wrapper: {
-      minHeight: '100vh',
-      background: '#0A0A0A',
-      color: '#FAFAFA',
-      fontFamily: font,
-      display: 'flex',
-      flexDirection: 'column',
-      alignItems: 'center',
-      padding: '0 16px',
-    },
-    header: {
-      width: '100%',
-      maxWidth: 480,
-      textAlign: 'center',
-      paddingTop: 40,
-      marginBottom: 24,
-    },
-    logo: {
-      fontSize: 13,
-      fontFamily: mono,
-      letterSpacing: '0.2em',
-      color: '#666',
-      textTransform: 'uppercase',
-      marginBottom: 4,
-    },
-    title: {
-      fontSize: 32,
-      fontWeight: 800,
-      letterSpacing: '-0.02em',
-      margin: 0,
-    },
-    menuGrid: {
-      width: '100%',
-      maxWidth: 480,
-      display: 'flex',
-      flexDirection: 'column',
-      gap: 12,
-      marginTop: 16,
-    },
-    menuCard: (color) => ({
-      background: `${color}12`,
-      border: `1.5px solid ${color}30`,
-      borderRadius: 16,
-      padding: '20px 24px',
-      display: 'flex',
-      alignItems: 'center',
-      gap: 16,
-      cursor: 'pointer',
-      transition: 'all 0.2s',
-    }),
-    menuIcon: {
-      fontSize: 32,
-      width: 56,
-      height: 56,
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      borderRadius: 14,
-      background: 'rgba(255,255,255,0.06)',
-    },
-    menuLabel: {
-      fontFamily: mono,
-      fontSize: 11,
-      letterSpacing: '0.15em',
-      textTransform: 'uppercase',
-      color: '#888',
-      marginBottom: 2,
-    },
-    menuPrompt: {
-      fontSize: 15,
-      fontWeight: 600,
-      lineHeight: 1.3,
-      color: '#E0E0E0',
-    },
-    playArea: {
-      width: '100%',
-      maxWidth: 480,
-    },
-    categoryBadge: (color) => ({
-      display: 'inline-flex',
-      alignItems: 'center',
-      gap: 8,
-      background: `${color}20`,
-      border: `1px solid ${color}40`,
-      borderRadius: 100,
-      padding: '6px 16px',
-      fontFamily: mono,
-      fontSize: 11,
-      letterSpacing: '0.12em',
-      textTransform: 'uppercase',
-      color: color,
-      marginBottom: 8,
-    }),
-    prompt: {
-      fontSize: 20,
-      fontWeight: 700,
-      lineHeight: 1.3,
-      marginBottom: 4,
-    },
-    direction: {
-      fontSize: 13,
-      color: '#666',
-      fontFamily: mono,
-      marginBottom: 24,
-    },
-    dragItem: (isDragging, feedbackItem) => ({
-      background: isDragging ? 'rgba(255,255,255,0.08)' : feedbackItem ? `${feedbackItem.emoji === '🟩' ? '#22c55e' : '#ef4444'}18` : 'rgba(255,255,255,0.04)',
-      border: isDragging ? '1.5px solid rgba(255,255,255,0.2)' : feedbackItem ? `1.5px solid ${feedbackItem.emoji === '🟩' ? '#22c55e' : '#ef4444'}40` : '1.5px solid rgba(255,255,255,0.08)',
-      borderRadius: 14,
-      padding: '16px 20px',
-      display: 'flex',
-      alignItems: 'center',
-      gap: 14,
-      cursor: feedback ? 'default' : 'grab',
-      transition: 'all 0.25s cubic-bezier(0.2, 0, 0, 1)',
-      transform: isDragging ? 'scale(1.03)' : 'scale(1)',
-      opacity: isDragging ? 0.85 : 1,
-      userSelect: 'none',
-      touchAction: 'none',
-    }),
-    dragHandle: {
-      color: '#555',
-      fontSize: 18,
-      flexShrink: 0,
-      width: 24,
-      textAlign: 'center',
-    },
-    itemNum: {
-      fontFamily: mono,
-      fontSize: 13,
-      color: '#555',
-      width: 20,
-      flexShrink: 0,
-    },
-    itemName: {
-      flex: 1,
-      fontSize: 15,
-      fontWeight: 600,
-      lineHeight: 1.3,
-    },
-    itemValue: {
-      fontFamily: mono,
-      fontSize: 13,
-      color: '#888',
-      flexShrink: 0,
-    },
-    feedbackEmoji: {
-      fontSize: 20,
-      flexShrink: 0,
-    },
-    attemptBar: {
-      display: 'flex',
-      justifyContent: 'space-between',
-      alignItems: 'center',
-      marginTop: 20,
-      marginBottom: 12,
-    },
-    attemptDots: {
-      display: 'flex',
-      gap: 8,
-    },
-    dot: (active) => ({
-      width: 10,
-      height: 10,
-      borderRadius: '50%',
-      background: active ? '#fff' : 'rgba(255,255,255,0.15)',
-      transition: 'background 0.2s',
-    }),
-    submitBtn: {
-      background: '#FAFAFA',
-      color: '#0A0A0A',
-      border: 'none',
-      borderRadius: 14,
-      padding: '16px 0',
-      width: '100%',
-      fontSize: 15,
-      fontWeight: 700,
-      fontFamily: font,
-      cursor: 'pointer',
-      letterSpacing: '0.02em',
-      transition: 'opacity 0.2s',
-    },
-    resultArea: {
-      width: '100%',
-      maxWidth: 480,
-      textAlign: 'center',
-      paddingBottom: 60,
-    },
-    resultEmoji: {
-      fontSize: 56,
-      marginBottom: 16,
-    },
-    resultTitle: {
-      fontSize: 28,
-      fontWeight: 800,
-      marginBottom: 8,
-    },
-    resultSub: {
-      fontSize: 15,
-      color: '#888',
-      marginBottom: 32,
-    },
-    gridRow: {
-      display: 'flex',
-      justifyContent: 'center',
-      gap: 6,
-      marginBottom: 6,
-    },
-    gridEmoji: {
-      fontSize: 28,
-    },
-    shareBtn: (color) => ({
-      background: color || '#FAFAFA',
-      color: '#0A0A0A',
-      border: 'none',
-      borderRadius: 14,
-      padding: '16px 32px',
-      fontSize: 15,
-      fontWeight: 700,
-      fontFamily: font,
-      cursor: 'pointer',
-      marginTop: 24,
-      transition: 'transform 0.15s',
-    }),
-    backBtn: {
-      background: 'transparent',
-      border: '1.5px solid rgba(255,255,255,0.15)',
-      borderRadius: 14,
-      padding: '14px 32px',
-      fontSize: 14,
-      fontWeight: 600,
-      fontFamily: font,
-      color: '#888',
-      cursor: 'pointer',
-      marginTop: 12,
-    },
-    answerList: {
-      textAlign: 'left',
-      marginTop: 32,
-      marginBottom: 24,
-    },
-    answerItem: {
-      display: 'flex',
-      alignItems: 'center',
-      gap: 12,
-      padding: '12px 0',
-      borderBottom: '1px solid rgba(255,255,255,0.06)',
-    },
-    answerRank: {
-      fontFamily: mono,
-      fontSize: 13,
-      color: '#555',
-      width: 24,
-    },
-    answerName: {
-      flex: 1,
-      fontSize: 14,
-      fontWeight: 600,
-    },
-    answerValue: {
-      fontFamily: mono,
-      fontSize: 13,
-      color: '#1DB954',
-      fontWeight: 600,
-    },
-  };
-
-  // ─── RENDER ───
+  // ═══════════════ MENU ═══════════════
   if (screen === 'menu') {
     const allDone = completedRounds.length === SAMPLE_PUZZLES.length;
     return (
-      <div style={styles.wrapper}>
+      <div style={{ minHeight: '100vh', background: '#0A0A0A', color: '#FAFAFA', fontFamily: font, display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '0 16px' }}>
         <link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet" />
-        <div style={styles.header}>
-          <div style={styles.logo}>BuzzFeed Presents</div>
-          <h1 style={styles.title}>THE LINEUP</h1>
+        <div style={{ width: '100%', maxWidth: 480, textAlign: 'center', paddingTop: 40, marginBottom: 24 }}>
+          <div style={{ fontSize: 13, fontFamily: mono, letterSpacing: '0.2em', color: '#666', textTransform: 'uppercase', marginBottom: 4 }}>BuzzFeed Presents</div>
+          <h1 style={{ fontSize: 32, fontWeight: 800, letterSpacing: '-0.02em', margin: 0 }}>THE LINEUP</h1>
           <p style={{ color: '#666', fontSize: 14, marginTop: 4 }}>
             {allDone ? 'All rounds complete! Share your results.' : 'Rank 5 items. 3 attempts. 5 rounds.'}
           </p>
           {completedRounds.length > 0 && !allDone && (
-            <div style={{ fontFamily: mono, fontSize: 12, color: '#555', marginTop: 8 }}>
-              Round {completedRounds.length + 1} of 5
-            </div>
+            <div style={{ fontFamily: mono, fontSize: 12, color: '#555', marginTop: 8 }}>Round {completedRounds.length + 1} of 5</div>
           )}
         </div>
-        <div style={styles.menuGrid}>
+
+        <div style={{ width: '100%', maxWidth: 480, display: 'flex', flexDirection: 'column', gap: 12, marginTop: 16 }}>
           {SAMPLE_PUZZLES.map((p, idx) => {
             const isCompleted = completedRounds.includes(p.id);
             const isNext = idx === currentUnlocked;
@@ -534,23 +281,26 @@ export default function TheLineup() {
             return (
               <div
                 key={p.id}
-                style={{
-                  ...styles.menuCard(p.color),
-                  opacity: isLocked ? 0.35 : 1,
-                  cursor: isNext ? 'pointer' : 'default',
-                  borderColor: isNext ? `${p.color}60` : isCompleted ? `${p.color}20` : `${p.color}15`,
-                  position: 'relative',
-                }}
                 onClick={() => isNext && startGame(p)}
-                onMouseEnter={e => { if (isNext) { e.currentTarget.style.borderColor = `${p.color}80`; e.currentTarget.style.transform = 'translateY(-2px)'; } }}
-                onMouseLeave={e => { if (isNext) { e.currentTarget.style.borderColor = `${p.color}60`; e.currentTarget.style.transform = 'translateY(0)'; } }}
+                style={{
+                  background: `${p.color}12`,
+                  border: `1.5px solid ${isNext ? p.color + '60' : p.color + '20'}`,
+                  borderRadius: 16,
+                  padding: '20px 24px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 16,
+                  cursor: isNext ? 'pointer' : 'default',
+                  transition: 'all 0.2s',
+                  opacity: isLocked ? 0.35 : 1,
+                }}
               >
-                <div style={styles.menuIcon}>{p.icon}</div>
+                <div style={{ fontSize: 32, width: 56, height: 56, display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: 14, background: 'rgba(255,255,255,0.06)' }}>{p.icon}</div>
                 <div style={{ flex: 1 }}>
-                  <div style={styles.menuLabel}>{p.category}</div>
-                  <div style={styles.menuPrompt}>{p.prompt}</div>
+                  <div style={{ fontFamily: mono, fontSize: 11, letterSpacing: '0.15em', textTransform: 'uppercase', color: '#888', marginBottom: 2 }}>{p.category}</div>
+                  <div style={{ fontSize: 15, fontWeight: 600, lineHeight: 1.3, color: '#E0E0E0' }}>{p.prompt}</div>
                   {isCompleted && result && (
-                    <div style={{ display: 'flex', gap: 3, marginTop: 6 }}>
+                    <div style={{ display: 'flex', gap: 3, marginTop: 6, alignItems: 'center' }}>
                       {result.grid[result.grid.length - 1].map((emoji, j) => (
                         <span key={j} style={{ fontSize: 14 }}>{emoji}</span>
                       ))}
@@ -560,19 +310,17 @@ export default function TheLineup() {
                     </div>
                   )}
                 </div>
-                <div style={{ marginLeft: 'auto', color: '#555', fontSize: 20 }}>
+                <div style={{ marginLeft: 'auto', color: isCompleted ? '#22c55e' : '#555', fontSize: 20, flexShrink: 0 }}>
                   {isCompleted ? '✓' : isNext ? '→' : '🔒'}
                 </div>
               </div>
             );
           })}
         </div>
+
         {allDone && (
           <div style={{ maxWidth: 480, width: '100%', textAlign: 'center', marginTop: 24 }}>
-            <button
-              style={styles.shareBtn('#CDFF00')}
-              onClick={handleShareAll}
-            >
+            <button onClick={handleShareAll} style={{ background: '#CDFF00', color: '#0A0A0A', border: 'none', borderRadius: 14, padding: '16px 32px', fontSize: 15, fontWeight: 700, fontFamily: font, cursor: 'pointer' }}>
               {copied ? '✓ Copied!' : '📋 Share All Results'}
             </button>
           </div>
@@ -582,74 +330,60 @@ export default function TheLineup() {
     );
   }
 
+  // ═══════════════ RESULT ═══════════════
   if (screen === 'result') {
     return (
-      <div style={styles.wrapper}>
+      <div style={{ minHeight: '100vh', background: '#0A0A0A', color: '#FAFAFA', fontFamily: font, display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '0 16px' }}>
         <link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet" />
-        <div style={styles.header}>
-          <div style={styles.logo}>BuzzFeed Presents</div>
-          <h1 style={styles.title}>THE LINEUP</h1>
+        <div style={{ width: '100%', maxWidth: 480, textAlign: 'center', paddingTop: 40, marginBottom: 24 }}>
+          <div style={{ fontSize: 13, fontFamily: mono, letterSpacing: '0.2em', color: '#666', textTransform: 'uppercase', marginBottom: 4 }}>BuzzFeed Presents</div>
+          <h1 style={{ fontSize: 32, fontWeight: 800, letterSpacing: '-0.02em', margin: 0 }}>THE LINEUP</h1>
         </div>
-        <div style={styles.resultArea}>
-          <div style={styles.resultEmoji}>{solved ? '🎯' : '😤'}</div>
-          <div style={styles.resultTitle}>{solved ? `Nailed it in ${history.length}!` : 'Better luck next time'}</div>
-          <div style={styles.resultSub}>
-            <span style={styles.categoryBadge(puzzle.color)}>{puzzle.icon} {puzzle.category}</span>
+        <div style={{ width: '100%', maxWidth: 480, textAlign: 'center', paddingBottom: 60 }}>
+          <div style={{ fontSize: 56, marginBottom: 16 }}>{solved ? '🎯' : '😤'}</div>
+          <div style={{ fontSize: 28, fontWeight: 800, marginBottom: 8 }}>{solved ? `Nailed it in ${history.length}!` : 'Better luck next time'}</div>
+          <div style={{ marginBottom: 24 }}>
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, background: `${puzzle.color}20`, border: `1px solid ${puzzle.color}40`, borderRadius: 100, padding: '6px 16px', fontFamily: mono, fontSize: 11, letterSpacing: '0.12em', textTransform: 'uppercase', color: puzzle.color }}>{puzzle.icon} {puzzle.category}</span>
           </div>
 
-          {/* Emoji grid */}
           <div style={{ marginBottom: 24 }}>
             {history.map((row, i) => (
-              <div key={i} style={styles.gridRow}>
-                {row.map((emoji, j) => (
-                  <span key={j} style={styles.gridEmoji}>{emoji}</span>
-                ))}
+              <div key={i} style={{ display: 'flex', justifyContent: 'center', gap: 6, marginBottom: 6 }}>
+                {row.map((emoji, j) => <span key={j} style={{ fontSize: 28 }}>{emoji}</span>)}
               </div>
             ))}
           </div>
 
-          {/* Correct answers */}
-          <div style={styles.answerList}>
+          <div style={{ textAlign: 'left', marginTop: 32, marginBottom: 24 }}>
             <div style={{ fontFamily: mono, fontSize: 11, letterSpacing: '0.15em', textTransform: 'uppercase', color: '#555', marginBottom: 12 }}>
               Correct order — {puzzle.direction}
             </div>
             {puzzle.items.map((item, i) => (
-              <div key={i} style={styles.answerItem}>
-                <div style={styles.answerRank}>#{i + 1}</div>
-                <div style={styles.answerName}>{item.name}</div>
-                <div style={{ ...styles.answerValue, color: puzzle.color }}>{item.value}</div>
+              <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 0', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+                <div style={{ fontFamily: mono, fontSize: 13, color: '#555', width: 24 }}>#{i + 1}</div>
+                <div style={{ flex: 1, fontSize: 14, fontWeight: 600 }}>{item.name}</div>
+                <div style={{ fontFamily: mono, fontSize: 13, color: puzzle.color, fontWeight: 600 }}>{item.value}</div>
               </div>
             ))}
           </div>
 
-          <button
-            style={styles.shareBtn(puzzle.color)}
-            onClick={handleShare}
-            onMouseDown={e => e.currentTarget.style.transform = 'scale(0.97)'}
-            onMouseUp={e => e.currentTarget.style.transform = 'scale(1)'}
-          >
+          <button onClick={handleShare} style={{ background: puzzle.color, color: '#fff', border: 'none', borderRadius: 14, padding: '16px 32px', fontSize: 15, fontWeight: 700, fontFamily: font, cursor: 'pointer', marginTop: 8 }}>
             {copied ? '✓ Copied!' : '📋 Share Results'}
           </button>
           <br />
           {completedRounds.length < SAMPLE_PUZZLES.length ? (
             <button
-              style={{ ...styles.submitBtn, marginTop: 12, marginBottom: 40 }}
               onClick={() => {
                 const nextIdx = SAMPLE_PUZZLES.findIndex(p => p.id === puzzle.id) + 1;
-                if (nextIdx < SAMPLE_PUZZLES.length) {
-                  startGame(SAMPLE_PUZZLES[nextIdx]);
-                } else {
-                  setScreen('menu');
-                }
+                if (nextIdx < SAMPLE_PUZZLES.length) startGame(SAMPLE_PUZZLES[nextIdx]);
+                else setScreen('menu');
               }}
+              style={{ background: '#FAFAFA', color: '#0A0A0A', border: 'none', borderRadius: 14, padding: '16px 0', width: '100%', fontSize: 15, fontWeight: 700, fontFamily: font, cursor: 'pointer', marginTop: 12, marginBottom: 40 }}
             >
               Next round →
             </button>
           ) : (
-            <button
-              style={{ ...styles.shareBtn('#CDFF00'), marginTop: 12, marginBottom: 40 }}
-              onClick={() => setScreen('menu')}
-            >
+            <button onClick={() => setScreen('menu')} style={{ background: '#CDFF00', color: '#0A0A0A', border: 'none', borderRadius: 14, padding: '16px 32px', fontSize: 15, fontWeight: 700, fontFamily: font, cursor: 'pointer', marginTop: 12, marginBottom: 40 }}>
               See all results →
             </button>
           )}
@@ -658,65 +392,78 @@ export default function TheLineup() {
     );
   }
 
-  // ─── PLAY SCREEN ───
+  // ═══════════════ PLAY ═══════════════
   return (
-    <div style={styles.wrapper}>
+    <div style={{ minHeight: '100vh', background: '#0A0A0A', color: '#FAFAFA', fontFamily: font, display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '0 16px', touchAction: 'pan-x' }}>
       <link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet" />
-      <div style={styles.header}>
-        <div style={styles.logo}>BuzzFeed Presents</div>
-        <h1 style={styles.title}>THE LINEUP</h1>
+      <div style={{ width: '100%', maxWidth: 480, textAlign: 'center', paddingTop: 40, marginBottom: 24 }}>
+        <div style={{ fontSize: 13, fontFamily: mono, letterSpacing: '0.2em', color: '#666', textTransform: 'uppercase', marginBottom: 4 }}>BuzzFeed Presents</div>
+        <h1 style={{ fontSize: 32, fontWeight: 800, letterSpacing: '-0.02em', margin: 0 }}>THE LINEUP</h1>
       </div>
-      <div style={styles.playArea}>
-        <div style={styles.categoryBadge(puzzle.color)}>{puzzle.icon} {puzzle.category}</div>
-        <div style={styles.prompt}>{puzzle.prompt}</div>
-        <div style={styles.direction}>Drag to rank: {puzzle.direction}</div>
+      <div style={{ width: '100%', maxWidth: 480 }}>
+        <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, background: `${puzzle.color}20`, border: `1px solid ${puzzle.color}40`, borderRadius: 100, padding: '6px 16px', fontFamily: mono, fontSize: 11, letterSpacing: '0.12em', textTransform: 'uppercase', color: puzzle.color, marginBottom: 8 }}>{puzzle.icon} {puzzle.category}</div>
+        <div style={{ fontSize: 20, fontWeight: 700, lineHeight: 1.3, marginBottom: 4 }}>{puzzle.prompt}</div>
+        <div style={{ fontSize: 13, color: '#666', fontFamily: mono, marginBottom: 24 }}>Drag to rank: {puzzle.direction}</div>
 
-        {/* Draggable items */}
-        <div ref={listRef} style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-          {items.map((item, index) => (
-            <div
-              key={item.id}
-              data-drag-item
-              draggable={!feedback}
-              onDragStart={() => handleDragStart(index)}
-              onDragEnter={() => handleDragEnter(index)}
-              onDragEnd={handleDragEnd}
-              onDragOver={(e) => e.preventDefault()}
-              onTouchStart={(e) => handleTouchStart(e, index)}
-              onTouchEnd={handleTouchEnd}
-              style={styles.dragItem(dragging === index, feedback?.[index])}
-            >
-              {!feedback && <div style={styles.dragHandle}>⠿</div>}
-              {feedback && <div style={styles.feedbackEmoji}>{feedback[index].emoji}</div>}
-              <div style={styles.itemNum}>{index + 1}.</div>
-              <div style={styles.itemName}>{item.name}</div>
-              {feedback && feedback[index].diff === 0 && (
-                <div style={{ ...styles.itemValue, color: puzzle.color }}>{item.value}</div>
-              )}
-            </div>
-          ))}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, position: 'relative' }}>
+          {items.map((item, index) => {
+            const fb = feedback ? feedback[index] : null;
+            const isActive = activeItem === index;
+            const isGreen = fb && fb.emoji === '🟩';
+            const isRed = fb && fb.emoji === '🟥';
+
+            return (
+              <div
+                key={item.id}
+                ref={el => { itemsRef.current[index] = el; }}
+                onPointerDown={(e) => !fb && handlePointerDown(e, index)}
+                style={{
+                  background: isActive ? 'rgba(255,255,255,0.1)' : isGreen ? '#22c55e18' : isRed ? '#ef444418' : 'rgba(255,255,255,0.04)',
+                  border: `1.5px solid ${isActive ? 'rgba(255,255,255,0.3)' : isGreen ? '#22c55e40' : isRed ? '#ef444440' : 'rgba(255,255,255,0.08)'}`,
+                  borderRadius: 14,
+                  padding: '14px 16px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 10,
+                  transition: isActive ? 'none' : 'all 0.25s cubic-bezier(0.2, 0, 0, 1)',
+                  transform: isActive ? `translateY(${dragY}px) scale(1.03)` : 'translateY(0) scale(1)',
+                  boxShadow: isActive ? '0 8px 32px rgba(0,0,0,0.4)' : 'none',
+                  zIndex: isActive ? 10 : 1,
+                  position: 'relative',
+                  userSelect: 'none',
+                  touchAction: 'none',
+                  cursor: fb ? 'default' : 'grab',
+                }}
+              >
+                {/* Drag handle icon (visual cue) */}
+                {!fb && (
+                  <div style={{ color: isActive ? '#aaa' : '#555', fontSize: 22, flexShrink: 0, lineHeight: 1 }}>⠿</div>
+                )}
+                {fb && <div style={{ fontSize: 20, flexShrink: 0 }}>{fb.emoji}</div>}
+
+                <div style={{ fontFamily: mono, fontSize: 13, color: '#555', width: 22, flexShrink: 0 }}>{index + 1}.</div>
+                <div style={{ flex: 1, fontSize: 15, fontWeight: 600, lineHeight: 1.3 }}>{item.name}</div>
+
+                {fb && fb.diff === 0 && (
+                  <div style={{ fontFamily: mono, fontSize: 12, color: puzzle.color, flexShrink: 0 }}>{item.value}</div>
+                )}
+              </div>
+            );
+          })}
         </div>
 
         {/* Attempt bar */}
-        <div style={styles.attemptBar}>
-          <div style={{ fontFamily: mono, fontSize: 12, color: '#555' }}>
-            Attempt {attempt}/{maxAttempts}
-          </div>
-          <div style={styles.attemptDots}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 20, marginBottom: 12 }}>
+          <div style={{ fontFamily: mono, fontSize: 12, color: '#555' }}>Attempt {attempt}/{maxAttempts}</div>
+          <div style={{ display: 'flex', gap: 8 }}>
             {Array.from({ length: maxAttempts }).map((_, i) => (
-              <div key={i} style={styles.dot(i < attempt)} />
+              <div key={i} style={{ width: 10, height: 10, borderRadius: '50%', background: i < attempt ? '#fff' : 'rgba(255,255,255,0.15)', transition: 'background 0.2s' }} />
             ))}
           </div>
         </div>
 
-        {/* Submit / Back */}
         {!feedback && (
-          <button
-            style={styles.submitBtn}
-            onClick={submitGuess}
-            onMouseDown={e => e.currentTarget.style.opacity = '0.8'}
-            onMouseUp={e => e.currentTarget.style.opacity = '1'}
-          >
+          <button onClick={submitGuess} style={{ background: '#FAFAFA', color: '#0A0A0A', border: 'none', borderRadius: 14, padding: '16px 0', width: '100%', fontSize: 15, fontWeight: 700, fontFamily: font, cursor: 'pointer', letterSpacing: '0.02em' }}>
             Lock in my order →
           </button>
         )}
@@ -725,7 +472,6 @@ export default function TheLineup() {
             {attempt > maxAttempts ? 'Revealing correct order...' : 'Rearrange and try again...'}
           </div>
         )}
-
         <div style={{ height: 40 }} />
       </div>
     </div>
