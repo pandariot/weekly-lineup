@@ -410,8 +410,8 @@ function App() {
         var active = dragIdx === i;
         var green = f && f.em === "🟩";
         var red = f && f.em === "🟥";
-        var bg = active ? "rgba(255,255,255,0.1)" : green ? "rgba(34,197,94,0.1)" : red ? "rgba(239,68,68,0.1)" : "rgba(255,255,255,0.04)";
-        var bdr = active ? "rgba(255,255,255,0.3)" : green ? "rgba(34,197,94,0.25)" : red ? "rgba(239,68,68,0.25)" : "rgba(255,255,255,0.08)";
+        var bg = active ? "rgba(255,255,255,0.1)" : green ? "rgba(34,197,94,0.25)" : red ? "rgba(239,68,68,0.2)" : "rgba(255,255,255,0.04)";
+        var bdr = active ? "rgba(255,255,255,0.3)" : green ? "rgba(34,197,94,0.5)" : red ? "rgba(239,68,68,0.45)" : "rgba(255,255,255,0.08)";
 
         return e("div", {
           key: item.id,
@@ -435,6 +435,21 @@ function App() {
           f && f.diff === 0 && e("div", { className: "mono item-val", style: { color: pz.color } }, item.val)
         );
       }),
+
+      // Attempt history grid (Wordle-style matrix)
+      hist.length > 0 && e("div", { style: { marginTop: 16, padding: "12px 0", borderTop: "1px solid rgba(255,255,255,0.06)" } },
+        hist.map(function(row, i) {
+          return e("div", { key: i, style: { display: "flex", alignItems: "center", gap: 8, marginBottom: 4 } },
+            e("div", { className: "mono", style: { fontSize: 10, color: "#444", width: 14 } }, (i + 1) + "."),
+            e("div", { style: { display: "flex", gap: 4 } },
+              row.map(function(em, j) { return e("span", { key: j, style: { fontSize: 20 } }, em); })
+            ),
+            e("div", { className: "mono", style: { fontSize: 10, color: "#444", marginLeft: 8 } },
+              row.filter(function(x) { return x === "🟩"; }).length + "/5"
+            )
+          );
+        })
+      ),
 
       e("div", { className: "attempt-bar" },
         e("div", { className: "mono", style: { fontSize: 12, color: "#555" } }, "Attempt " + att + "/3"),
