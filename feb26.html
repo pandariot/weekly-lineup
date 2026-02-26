@@ -1,394 +1,458 @@
-import { useState, useRef, useEffect } from "react";
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>The Lineup — BuzzFeed</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #0A0A0A;
+    color: #FAFAFA;
+    font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+    min-height: 100vh;
+    -webkit-font-smoothing: antialiased;
+    overflow-x: hidden;
+  }
+  .mono { font-family: 'SFMono-Regular', Menlo, Consolas, monospace; }
+  .wrap { display: flex; flex-direction: column; align-items: center; padding: 0 16px; min-height: 100vh; }
+  .inner { width: 100%; max-width: 480px; }
+  .header { text-align: center; padding-top: 40px; margin-bottom: 20px; }
+  .header .sub { font-size: 12px; letter-spacing: 0.2em; color: #666; text-transform: uppercase; margin-bottom: 4px; }
+  .header h1 { font-size: 32px; font-weight: 800; letter-spacing: -0.02em; }
 
-const PUZZLES = [
+  .badge {
+    display: inline-flex; align-items: center; gap: 8px;
+    border-radius: 100px; padding: 5px 14px;
+    font-family: 'SFMono-Regular', Menlo, monospace;
+    font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase;
+  }
+
+  .menu-card {
+    border-radius: 16px; padding: 18px 20px;
+    display: flex; align-items: center; gap: 14;
+    transition: all 0.2s; margin-bottom: 10px;
+  }
+  .menu-icon {
+    font-size: 28px; width: 48px; height: 48px;
+    display: flex; align-items: center; justify-content: center;
+    border-radius: 12px; background: rgba(255,255,255,0.06); flex-shrink: 0;
+  }
+  .menu-label { font-size: 10px; letter-spacing: 0.15em; text-transform: uppercase; color: #888; margin-bottom: 2px; }
+  .menu-prompt { font-size: 14px; font-weight: 600; line-height: 1.3; color: #E0E0E0; }
+  .menu-arrow { font-size: 18px; flex-shrink: 0; margin-left: auto; }
+
+  .item-row {
+    border-radius: 14px; padding: 14px 16px;
+    display: flex; align-items: center; gap: 10;
+    position: relative; user-select: none; touch-action: none;
+    margin-bottom: 8px;
+  }
+  .item-row.grabbing { cursor: grabbing; }
+
+  .drag-handle { color: #555; font-size: 20px; flex-shrink: 0; line-height: 1; }
+  .item-num { font-size: 12px; color: #555; width: 20px; flex-shrink: 0; }
+  .item-name { flex: 1; font-size: 15px; font-weight: 600; line-height: 1.3; }
+  .item-val { font-size: 11px; flex-shrink: 0; font-weight: 600; }
+
+  .attempt-bar { display: flex; justify-content: space-between; align-items: center; margin-top: 20px; margin-bottom: 12px; }
+  .dots { display: flex; gap: 8px; }
+  .dot { width: 10px; height: 10px; border-radius: 50%; transition: background 0.2s; }
+
+  .btn {
+    border: none; border-radius: 14px; padding: 16px 32px;
+    font-size: 15px; font-weight: 700; cursor: pointer;
+    font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+    transition: opacity 0.15s;
+  }
+  .btn:active { opacity: 0.85; }
+  .btn-full { width: 100%; padding: 16px 0; }
+
+  .result-item {
+    display: flex; align-items: center; gap: 10;
+    padding: 10px 0; border-bottom: 1px solid rgba(255,255,255,0.06);
+  }
+
+  .emoji-row { display: flex; justify-content: center; gap: 6px; margin-bottom: 6px; }
+  .emoji-row span { font-size: 26px; }
+  .score-row span { font-size: 13px; }
+</style>
+</head>
+<body>
+
+<div id="app"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+
+<script>
+var e = React.createElement;
+var useState = React.useState;
+var useRef = React.useRef;
+var useEffect = React.useEffect;
+
+var PUZZLES = [
   {
     id: "spotify", cat: "SPOTIFY", icon: "🎤", color: "#1DB954",
-    prompt: "Most monthly listeners on Spotify right now", dir: "most to fewest monthly listeners",
+    prompt: "Most monthly listeners on Spotify right now",
+    dir: "most to fewest monthly listeners",
     items: [
-      { name: "The Weeknd", val: "115.2M listeners", s: 1152 },
-      { name: "Taylor Swift", val: "97.8M listeners", s: 978 },
-      { name: "Billie Eilish", val: "82.4M listeners", s: 824 },
-      { name: "Bad Bunny", val: "71.6M listeners", s: 716 },
-      { name: "Sabrina Carpenter", val: "64.3M listeners", s: 643 },
-    ],
+      { name: "The Weeknd", val: "115.2M", s: 5 },
+      { name: "Taylor Swift", val: "97.8M", s: 4 },
+      { name: "Billie Eilish", val: "82.4M", s: 3 },
+      { name: "Bad Bunny", val: "71.6M", s: 2 },
+      { name: "Sabrina Carpenter", val: "64.3M", s: 1 }
+    ]
   },
   {
-    id: "box_office", cat: "BOX OFFICE", icon: "🎬", color: "#E50914",
-    prompt: "Highest grossing at the box office this weekend", dir: "highest to lowest gross",
+    id: "box", cat: "BOX OFFICE", icon: "🎬", color: "#E50914",
+    prompt: "Highest grossing this weekend",
+    dir: "highest to lowest gross",
     items: [
-      { name: "Dune: Part Three", val: "$82.4M", s: 824 },
-      { name: "Captain America: Brave New World", val: "$45.1M", s: 451 },
-      { name: "Bridget Jones: Mad About the Boy", val: "$22.3M", s: 223 },
-      { name: "The Monkey", val: "$14.7M", s: 147 },
-      { name: "Paddington in Peru", val: "$8.9M", s: 89 },
-    ],
+      { name: "Dune: Part Three", val: "$82.4M", s: 5 },
+      { name: "Captain America: Brave New World", val: "$45.1M", s: 4 },
+      { name: "Bridget Jones: Mad About the Boy", val: "$22.3M", s: 3 },
+      { name: "The Monkey", val: "$14.7M", s: 2 },
+      { name: "Paddington in Peru", val: "$8.9M", s: 1 }
+    ]
   },
   {
     id: "google", cat: "MOST GOOGLED", icon: "🔍", color: "#4285F4",
-    prompt: "Most Googled people this week", dir: "most to fewest searches",
+    prompt: "Most Googled people this week",
+    dir: "most to fewest searches",
     items: [
-      { name: "Taylor Swift", val: "12.4M searches", s: 124 },
-      { name: "Travis Kelce", val: "9.8M searches", s: 98 },
-      { name: "Zendaya", val: "7.2M searches", s: 72 },
-      { name: "Pete Davidson", val: "5.6M searches", s: 56 },
-      { name: "Ice Spice", val: "3.1M searches", s: 31 },
-    ],
+      { name: "Taylor Swift", val: "12.4M", s: 5 },
+      { name: "Travis Kelce", val: "9.8M", s: 4 },
+      { name: "Zendaya", val: "7.2M", s: 3 },
+      { name: "Pete Davidson", val: "5.6M", s: 2 },
+      { name: "Ice Spice", val: "3.1M", s: 1 }
+    ]
   },
   {
     id: "billboard", cat: "BILLBOARD", icon: "🎵", color: "#FF6B35",
-    prompt: "Highest on the Hot 100 this week", dir: "highest to lowest chart position",
+    prompt: "Highest on the Hot 100 this week",
+    dir: "highest to lowest chart position",
     items: [
-      { name: "Die With A Smile – Gaga & Mars", val: "#1", s: 100 },
-      { name: "APT. – ROSÉ & Bruno Mars", val: "#3", s: 98 },
-      { name: "Lovers & Friends – Usher", val: "#5", s: 96 },
-      { name: "Luther – Kendrick & SZA", val: "#7", s: 94 },
-      { name: "Timeless – Weeknd & Carti", val: "#9", s: 92 },
-    ],
+      { name: "Die With A Smile - Gaga", val: "#1", s: 5 },
+      { name: "APT. - ROSÉ & Mars", val: "#3", s: 4 },
+      { name: "Lovers & Friends - Usher", val: "#5", s: 3 },
+      { name: "Luther - Kendrick & SZA", val: "#7", s: 2 },
+      { name: "Timeless - Weeknd & Carti", val: "#9", s: 1 }
+    ]
   },
   {
-    id: "wikipedia", cat: "WIKIPEDIA", icon: "🌐", color: "#636466",
-    prompt: "Most viewed on Wikipedia this week", dir: "most to fewest pageviews",
+    id: "wiki", cat: "WIKIPEDIA", icon: "🌐", color: "#636466",
+    prompt: "Most viewed on Wikipedia this week",
+    dir: "most to fewest pageviews",
     items: [
-      { name: "Conan O'Brien", val: "4.8M views", s: 48 },
-      { name: "Severance (TV series)", val: "3.2M views", s: 32 },
-      { name: "Super Bowl LX", val: "2.9M views", s: 29 },
-      { name: "Timothée Chalamet", val: "2.1M views", s: 21 },
-      { name: "Bird flu", val: "1.7M views", s: 17 },
-    ],
-  },
+      { name: "Conan O'Brien", val: "4.8M", s: 5 },
+      { name: "Severance (TV series)", val: "3.2M", s: 4 },
+      { name: "Super Bowl LX", val: "2.9M", s: 3 },
+      { name: "Timothée Chalamet", val: "2.1M", s: 2 },
+      { name: "Bird flu", val: "1.7M", s: 1 }
+    ]
+  }
 ];
 
 function shuffle(arr) {
-  const a = [...arr];
-  for (let i = a.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [a[i], a[j]] = [a[j], a[i]];
+  var a = arr.slice();
+  for (var i = a.length - 1; i > 0; i--) {
+    var j = Math.floor(Math.random() * (i + 1));
+    var t = a[i]; a[i] = a[j]; a[j] = t;
   }
   return a;
 }
 
-const F = "'Instrument Sans', 'Helvetica Neue', sans-serif";
-const M = "'JetBrains Mono', 'SF Mono', monospace";
+function App() {
+  var _scr = useState("menu"), screen = _scr[0], setScreen = _scr[1];
+  var _pz = useState(null), pz = _pz[0], setPz = _pz[1];
+  var _items = useState([]), items = _items[0], setItems = _items[1];
+  var _att = useState(1), att = _att[0], setAtt = _att[1];
+  var _fb = useState(null), fb = _fb[0], setFb = _fb[1];
+  var _hist = useState([]), hist = _hist[0], setHist = _hist[1];
+  var _win = useState(false), win = _win[0], setWin = _win[1];
+  var _copied = useState(false), copied = _copied[0], setCopied = _copied[1];
+  var _done = useState([]), done = _done[0], setDone = _done[1];
+  var _allRes = useState({}), allRes = _allRes[0], setAllRes = _allRes[1];
+  var _di = useState(null), dragIdx = _di[0], setDragIdx = _di[1];
+  var _dy = useState(0), dragDy = _dy[0], setDragDy = _dy[1];
 
-export default function TheLineup() {
-  const [screen, setScreen] = useState("menu");
-  const [pz, setPz] = useState(null);
-  const [items, setItems] = useState([]);
-  const [att, setAtt] = useState(1);
-  const [fb, setFb] = useState(null);
-  const [hist, setHist] = useState([]);
-  const [win, setWin] = useState(false);
-  const [copied, setCopied] = useState(false);
-  const [done, setDone] = useState([]);
-  const [allRes, setAllRes] = useState({});
-  const [dragIdx, setDragIdx] = useState(null);
-  const [dragDy, setDragDy] = useState(0);
-  const startY = useRef(0);
-  const rowH = useRef(72);
-  const refs = useRef([]);
+  var startY = useRef(0);
+  var rowH = useRef(72);
+  var elRefs = useRef([]);
+  var unlocked = done.length;
 
-  const unlocked = done.length;
-
-  const go = (p) => {
+  function go(p) {
     setPz(p);
-    setItems(shuffle(p.items.map((it, i) => ({ ...it, idx: i, id: "i" + i }))));
-    setAtt(1); setFb(null); setHist([]); setWin(false); setCopied(false); setDragIdx(null);
-    setScreen("play");
-  };
+    setItems(shuffle(p.items.map(function(it, i) {
+      return { name: it.name, val: it.val, s: it.s, id: "i" + i };
+    })));
+    setAtt(1); setFb(null); setHist([]); setWin(false);
+    setCopied(false); setDragIdx(null); setScreen("play");
+  }
 
-  const submit = () => {
-    const res = items.map((it, i) => {
-      const ci = pz.items.findIndex((c) => c.name === it.name);
-      const d = Math.abs(i - ci);
-      return { ...it, diff: d, em: d === 0 ? "🟩" : "🟥" };
+  function doSubmit() {
+    var res = items.map(function(it, i) {
+      var ci = pz.items.findIndex(function(c) { return c.name === it.name; });
+      var d = Math.abs(i - ci);
+      return { name: it.name, val: it.val, s: it.s, id: it.id, diff: d, em: d === 0 ? "🟩" : "🟥" };
     });
-    const perfect = res.every((r) => r.diff === 0);
+    var perfect = res.every(function(r) { return r.diff === 0; });
     setFb(res);
-    const newHist = [...hist, res.map((r) => r.em)];
+    var newHist = hist.concat([res.map(function(r) { return r.em; })]);
     setHist(newHist);
 
     if (perfect) {
       setWin(true);
-      setTimeout(() => {
-        setAllRes((p) => ({ ...p, [pz.id]: { win: true, att: newHist.length, grid: newHist } }));
-        setDone((p) => [...p, pz.id]);
+      setTimeout(function() {
+        var o = {}; o[pz.id] = { win: true, att: newHist.length, grid: newHist };
+        setAllRes(function(p) { return Object.assign({}, p, o); });
+        setDone(function(p) { return p.concat([pz.id]); });
         setScreen("result");
       }, 1200);
     } else if (att >= 3) {
-      setTimeout(() => {
-        setItems(pz.items.map((it, i) => ({ ...it, idx: i, id: "i" + i })));
-        setFb(pz.items.map((it) => ({ ...it, diff: 0, em: "🟩" })));
-        setTimeout(() => {
-          setAllRes((p) => ({ ...p, [pz.id]: { win: false, att: 3, grid: newHist } }));
-          setDone((p) => [...p, pz.id]);
+      setTimeout(function() {
+        setItems(pz.items.map(function(it, i) { return { name: it.name, val: it.val, s: it.s, id: "i" + i }; }));
+        setFb(pz.items.map(function(it) { return { name: it.name, val: it.val, diff: 0, em: "🟩" }; }));
+        setTimeout(function() {
+          var o = {}; o[pz.id] = { win: false, att: 3, grid: newHist };
+          setAllRes(function(p) { return Object.assign({}, p, o); });
+          setDone(function(p) { return p.concat([pz.id]); });
           setScreen("result");
         }, 1200);
       }, 1500);
     } else {
-      setAtt((p) => p + 1);
-      setTimeout(() => setFb(null), 1800);
+      setAtt(att + 1);
+      setTimeout(function() { setFb(null); }, 1800);
     }
-  };
+  }
 
-  // Pointer drag
-  const onDown = (e, i) => {
+  function onDown(ev, i) {
     if (fb) return;
-    e.preventDefault();
-    const el = refs.current[i];
+    ev.preventDefault();
+    var el = elRefs.current[i];
     if (el) rowH.current = el.getBoundingClientRect().height + 8;
     setDragIdx(i);
-    startY.current = e.clientY;
+    startY.current = ev.clientY;
     setDragDy(0);
-  };
+  }
 
-  useEffect(() => {
+  useEffect(function() {
     if (dragIdx === null) return;
-    let ci = dragIdx;
-    let sy = startY.current;
+    var ci = dragIdx;
+    var sy = startY.current;
 
-    const onMove = (e) => {
-      e.preventDefault();
-      const dy = e.clientY - sy;
+    function onMove(ev) {
+      ev.preventDefault();
+      var dy = ev.clientY - sy;
       setDragDy(dy);
-      const th = rowH.current * 0.5;
+      var th = rowH.current * 0.5;
       if (dy > th && ci < items.length - 1) {
-        setItems((prev) => {
-          const n = [...prev];
-          const tmp = n[ci];
-          n[ci] = n[ci + 1];
-          n[ci + 1] = tmp;
-          return n;
+        setItems(function(prev) {
+          var n = prev.slice(); var t = n[ci]; n[ci] = n[ci+1]; n[ci+1] = t; return n;
         });
-        ci++;
-        setDragIdx(ci);
-        sy += rowH.current;
-        startY.current = sy;
-        setDragDy(dy - rowH.current);
+        ci++; setDragIdx(ci); sy += rowH.current; startY.current = sy; setDragDy(dy - rowH.current);
       } else if (dy < -th && ci > 0) {
-        setItems((prev) => {
-          const n = [...prev];
-          const tmp = n[ci];
-          n[ci] = n[ci - 1];
-          n[ci - 1] = tmp;
-          return n;
+        setItems(function(prev) {
+          var n = prev.slice(); var t = n[ci]; n[ci] = n[ci-1]; n[ci-1] = t; return n;
         });
-        ci--;
-        setDragIdx(ci);
-        sy -= rowH.current;
-        startY.current = sy;
-        setDragDy(dy + rowH.current);
+        ci--; setDragIdx(ci); sy -= rowH.current; startY.current = sy; setDragDy(dy + rowH.current);
       }
-    };
-
-    const onUp = () => {
-      setDragIdx(null);
-      setDragDy(0);
-    };
+    }
+    function onUp() { setDragIdx(null); setDragDy(0); }
 
     document.addEventListener("pointermove", onMove, { passive: false });
     document.addEventListener("pointerup", onUp);
     document.addEventListener("pointercancel", onUp);
-    return () => {
+    return function() {
       document.removeEventListener("pointermove", onMove);
       document.removeEventListener("pointerup", onUp);
       document.removeEventListener("pointercancel", onUp);
     };
   }, [dragIdx, items.length]);
 
-  const copyText = async (txt) => {
-    try { await navigator.clipboard.writeText(txt); } catch (_e) { /* noop */ }
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  };
+  function copyTxt(txt) {
+    try { navigator.clipboard.writeText(txt); } catch(x) {}
+    setCopied(true); setTimeout(function() { setCopied(false); }, 2000);
+  }
 
-  const shareOne = () => {
-    const grid = hist.map((r, i) => (i + 1) + ". " + r.join("")).join("\n");
-    const r = win ? "✅ Solved in " + hist.length + "/3!" : "❌ 3/3";
-    copyText("THE LINEUP: " + pz.cat + "\n" + pz.prompt + "\n\n" + grid + "\n" + r + "\n\nPlay at buzzfeed.com/the-lineup");
-  };
-
-  const shareAll = () => {
-    const lines = ["THE LINEUP 🎯\n"];
-    PUZZLES.forEach((p) => {
-      const r = allRes[p.id];
-      if (!r) return;
-      const row = r.grid[r.grid.length - 1].join("");
-      lines.push(p.icon + " " + p.cat + ": " + row + " " + (r.win ? "✅ " + r.att + "/3" : "❌"));
-    });
-    lines.push("\n" + Object.values(allRes).filter((r) => r.win).length + "/5 rounds solved");
-    lines.push("\nPlay at buzzfeed.com/the-lineup");
-    copyText(lines.join("\n"));
-  };
-
-  const Badge = ({ color, children }) => (
-    <span style={{ display: "inline-flex", alignItems: "center", gap: 8, background: color + "20", border: "1px solid " + color + "40", borderRadius: 100, padding: "6px 16px", fontFamily: M, fontSize: 11, letterSpacing: "0.12em", textTransform: "uppercase", color }}>{children}</span>
-  );
-
-  const Btn = ({ bg, color, onClick, children, style }) => (
-    <button onClick={onClick} style={{ background: bg || "#FAFAFA", color: color || "#0A0A0A", border: "none", borderRadius: 14, padding: "16px 32px", fontSize: 15, fontWeight: 700, fontFamily: F, cursor: "pointer", ...style }}>{children}</button>
-  );
-
-  const Wrap = ({ children }) => (
-    <div style={{ minHeight: "100vh", background: "#0A0A0A", color: "#FAFAFA", fontFamily: F, display: "flex", flexDirection: "column", alignItems: "center", padding: "0 16px", touchAction: "pan-x" }}>
-      <link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet" />
-      <div style={{ width: "100%", maxWidth: 480, textAlign: "center", paddingTop: 40, marginBottom: 24 }}>
-        <div style={{ fontSize: 13, fontFamily: M, letterSpacing: "0.2em", color: "#666", textTransform: "uppercase", marginBottom: 4 }}>BuzzFeed Presents</div>
-        <h1 style={{ fontSize: 32, fontWeight: 800, letterSpacing: "-0.02em", margin: 0 }}>THE LINEUP</h1>
-      </div>
-      {children}
-    </div>
-  );
+  // ══════ HEADER ══════
+  function hdr() {
+    return e("div", { className: "header" },
+      e("div", { className: "mono sub" }, "BuzzFeed Presents"),
+      e("h1", null, "THE LINEUP")
+    );
+  }
 
   // ══════ MENU ══════
   if (screen === "menu") {
-    const allDone = done.length === PUZZLES.length;
-    return (
-      <Wrap>
-        <p style={{ color: "#666", fontSize: 14, marginTop: -16, marginBottom: 16 }}>
-          {allDone ? "All rounds complete!" : "Rank 5 items. 3 attempts. 5 rounds."}
-        </p>
-        {done.length > 0 && !allDone && (
-          <div style={{ fontFamily: M, fontSize: 12, color: "#555", marginBottom: 16 }}>Round {done.length + 1} of 5</div>
-        )}
-        <div style={{ width: "100%", maxWidth: 480, display: "flex", flexDirection: "column", gap: 12 }}>
-          {PUZZLES.map((p, i) => {
-            const isDone = done.includes(p.id);
-            const isNext = i === unlocked;
-            const locked = i > unlocked;
-            const r = allRes[p.id];
-            return (
-              <div key={p.id} onClick={() => isNext && go(p)} style={{
-                background: p.color + "12", border: "1.5px solid " + p.color + (isNext ? "60" : "20"),
-                borderRadius: 16, padding: "20px 24px", display: "flex", alignItems: "center", gap: 16,
-                cursor: isNext ? "pointer" : "default", opacity: locked ? 0.35 : 1, transition: "all 0.2s",
-              }}>
-                <div style={{ fontSize: 32, width: 56, height: 56, display: "flex", alignItems: "center", justifyContent: "center", borderRadius: 14, background: "rgba(255,255,255,0.06)" }}>{p.icon}</div>
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontFamily: M, fontSize: 11, letterSpacing: "0.15em", textTransform: "uppercase", color: "#888", marginBottom: 2 }}>{p.cat}</div>
-                  <div style={{ fontSize: 15, fontWeight: 600, lineHeight: 1.3, color: "#E0E0E0" }}>{p.prompt}</div>
-                  {isDone && r && (
-                    <div style={{ display: "flex", gap: 3, marginTop: 6, alignItems: "center" }}>
-                      {r.grid[r.grid.length - 1].map((em, j) => <span key={j} style={{ fontSize: 14 }}>{em}</span>)}
-                      <span style={{ fontSize: 11, color: "#888", fontFamily: M, marginLeft: 6 }}>{r.win ? r.att + "/3" : "x/3"}</span>
-                    </div>
-                  )}
-                </div>
-                <div style={{ color: isDone ? "#22c55e" : "#555", fontSize: 20, flexShrink: 0 }}>
-                  {isDone ? "✓" : isNext ? "→" : "🔒"}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-        {allDone && (
-          <div style={{ marginTop: 24 }}>
-            <Btn bg="#CDFF00" onClick={shareAll}>{copied ? "✓ Copied!" : "📋 Share All Results"}</Btn>
-          </div>
-        )}
-        <p style={{ color: "#333", fontSize: 12, fontFamily: M, marginTop: 32 }}>New puzzles every Monday</p>
-      </Wrap>
+    var allDone = done.length === PUZZLES.length;
+    return e("div", { className: "wrap" },
+      e("div", { className: "inner" },
+        hdr(),
+        e("p", { style: { color: "#666", fontSize: 14, textAlign: "center", marginBottom: 16 } },
+          allDone ? "All rounds complete!" : "Rank 5 items. 3 attempts. 5 rounds."
+        ),
+        done.length > 0 && !allDone && e("div", { className: "mono", style: { fontSize: 12, color: "#555", textAlign: "center", marginBottom: 16 } }, "Round " + (done.length + 1) + " of 5"),
+
+        PUZZLES.map(function(p, idx) {
+          var isDone = done.indexOf(p.id) >= 0;
+          var isNext = idx === unlocked;
+          var locked = idx > unlocked;
+          var r = allRes[p.id];
+
+          return e("div", {
+            key: p.id, className: "menu-card",
+            onClick: function() { if (isNext) go(p); },
+            style: {
+              background: p.color + "12",
+              border: "1.5px solid " + p.color + (isNext ? "60" : "20"),
+              cursor: isNext ? "pointer" : "default",
+              opacity: locked ? 0.35 : 1
+            }
+          },
+            e("div", { className: "menu-icon" }, p.icon),
+            e("div", { style: { flex: 1 } },
+              e("div", { className: "mono menu-label" }, p.cat),
+              e("div", { className: "menu-prompt" }, p.prompt),
+              isDone && r && e("div", { style: { display: "flex", gap: 3, marginTop: 6, alignItems: "center" } },
+                r.grid[r.grid.length - 1].map(function(em, j) {
+                  return e("span", { key: j, style: { fontSize: 13 } }, em);
+                }),
+                e("span", { className: "mono", style: { fontSize: 10, color: "#888", marginLeft: 6 } }, r.win ? r.att + "/3" : "x/3")
+              )
+            ),
+            e("div", { className: "menu-arrow", style: { color: isDone ? "#22c55e" : "#555" } },
+              isDone ? "✓" : isNext ? "→" : "🔒"
+            )
+          );
+        }),
+
+        allDone && e("div", { style: { textAlign: "center", marginTop: 24 } },
+          e("button", {
+            className: "btn",
+            style: { background: "#CDFF00", color: "#0A0A0A" },
+            onClick: function() {
+              var lines = ["THE LINEUP 🎯\n"];
+              PUZZLES.forEach(function(p) {
+                var r = allRes[p.id]; if (!r) return;
+                lines.push(p.icon + " " + p.cat + ": " + r.grid[r.grid.length-1].join("") + " " + (r.win ? "✅ " + r.att + "/3" : "❌"));
+              });
+              lines.push("\n" + Object.values(allRes).filter(function(r) { return r.win; }).length + "/5 rounds solved");
+              lines.push("\nPlay at buzzfeed.com/the-lineup");
+              copyTxt(lines.join("\n"));
+            }
+          }, copied ? "✓ Copied!" : "📋 Share All Results")
+        ),
+        e("p", { className: "mono", style: { color: "#333", fontSize: 11, textAlign: "center", marginTop: 32, paddingBottom: 40 } }, "New puzzles every Monday")
+      )
     );
   }
 
   // ══════ RESULT ══════
   if (screen === "result") {
-    return (
-      <Wrap>
-        <div style={{ width: "100%", maxWidth: 480, textAlign: "center", paddingBottom: 60 }}>
-          <div style={{ fontSize: 56, marginBottom: 16 }}>{win ? "🎯" : "😤"}</div>
-          <div style={{ fontSize: 28, fontWeight: 800, marginBottom: 8 }}>{win ? "Nailed it in " + hist.length + "!" : "Better luck next time"}</div>
-          <div style={{ marginBottom: 24 }}><Badge color={pz.color}>{pz.icon} {pz.cat}</Badge></div>
+    return e("div", { className: "wrap" },
+      e("div", { className: "inner" },
+        hdr(),
+        e("div", { style: { textAlign: "center" } },
+          e("div", { style: { fontSize: 56, marginBottom: 12 } }, win ? "🎯" : "😤"),
+          e("div", { style: { fontSize: 26, fontWeight: 800, marginBottom: 8 } }, win ? "Nailed it in " + hist.length + "!" : "Better luck next time"),
+          e("div", { style: { marginBottom: 20 } },
+            e("span", { className: "badge", style: { background: pz.color + "20", border: "1px solid " + pz.color + "40", color: pz.color } }, pz.icon + " " + pz.cat)
+          ),
+          e("div", { style: { marginBottom: 20 } },
+            hist.map(function(row, i) {
+              return e("div", { key: i, className: "emoji-row" },
+                row.map(function(em, j) { return e("span", { key: j }, em); })
+              );
+            })
+          )
+        ),
 
-          <div style={{ marginBottom: 24 }}>
-            {hist.map((row, i) => (
-              <div key={i} style={{ display: "flex", justifyContent: "center", gap: 6, marginBottom: 6 }}>
-                {row.map((em, j) => <span key={j} style={{ fontSize: 28 }}>{em}</span>)}
-              </div>
-            ))}
-          </div>
+        e("div", { style: { textAlign: "left", marginBottom: 20 } },
+          e("div", { className: "mono", style: { fontSize: 10, letterSpacing: "0.15em", textTransform: "uppercase", color: "#555", marginBottom: 10 } }, "Correct order — " + pz.dir),
+          pz.items.map(function(it, i) {
+            return e("div", { key: i, className: "result-item" },
+              e("div", { className: "mono", style: { fontSize: 12, color: "#555", width: 24 } }, "#" + (i+1)),
+              e("div", { style: { flex: 1, fontSize: 14, fontWeight: 600 } }, it.name),
+              e("div", { className: "mono", style: { fontSize: 12, color: pz.color, fontWeight: 600 } }, it.val)
+            );
+          })
+        ),
 
-          <div style={{ textAlign: "left", marginTop: 32, marginBottom: 24 }}>
-            <div style={{ fontFamily: M, fontSize: 11, letterSpacing: "0.15em", textTransform: "uppercase", color: "#555", marginBottom: 12 }}>Correct order — {pz.dir}</div>
-            {pz.items.map((it, i) => (
-              <div key={i} style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 0", borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
-                <div style={{ fontFamily: M, fontSize: 13, color: "#555", width: 24 }}>#{i + 1}</div>
-                <div style={{ flex: 1, fontSize: 14, fontWeight: 600 }}>{it.name}</div>
-                <div style={{ fontFamily: M, fontSize: 13, color: pz.color, fontWeight: 600 }}>{it.val}</div>
-              </div>
-            ))}
-          </div>
+        e("div", { style: { textAlign: "center", paddingBottom: 60 } },
+          e("button", { className: "btn", style: { background: pz.color, color: "#fff" }, onClick: function() {
+            var grid = hist.map(function(r, i) { return (i+1) + ". " + r.join(""); }).join("\n");
+            copyTxt("THE LINEUP: " + pz.cat + "\n" + pz.prompt + "\n\n" + grid + "\n" + (win ? "✅ " + hist.length + "/3" : "❌ 3/3") + "\n\nPlay at buzzfeed.com/the-lineup");
+          }}, copied ? "✓ Copied!" : "📋 Share Results"),
 
-          <Btn bg={pz.color} color="#fff" onClick={shareOne}>{copied ? "✓ Copied!" : "📋 Share Results"}</Btn>
-          <br />
-          {done.length < PUZZLES.length ? (
-            <Btn onClick={() => {
-              const ni = PUZZLES.findIndex((p) => p.id === pz.id) + 1;
-              if (ni < PUZZLES.length) go(PUZZLES[ni]); else setScreen("menu");
-            }} style={{ width: "100%", marginTop: 12, marginBottom: 40, padding: "16px 0" }}>Next round →</Btn>
-          ) : (
-            <Btn bg="#CDFF00" onClick={() => setScreen("menu")} style={{ marginTop: 12, marginBottom: 40 }}>See all results →</Btn>
-          )}
-        </div>
-      </Wrap>
+          done.length < PUZZLES.length
+            ? e("button", { className: "btn btn-full", style: { background: "#FAFAFA", color: "#0A0A0A", marginTop: 12 }, onClick: function() {
+                var ni = PUZZLES.findIndex(function(p) { return p.id === pz.id; }) + 1;
+                if (ni < PUZZLES.length) go(PUZZLES[ni]); else setScreen("menu");
+              }}, "Next round →")
+            : e("button", { className: "btn", style: { background: "#CDFF00", color: "#0A0A0A", marginTop: 12 }, onClick: function() { setScreen("menu"); } }, "See all results →")
+        )
+      )
     );
   }
 
   // ══════ PLAY ══════
-  return (
-    <Wrap>
-      <div style={{ width: "100%", maxWidth: 480 }}>
-        <Badge color={pz.color}>{pz.icon} {pz.cat}</Badge>
-        <div style={{ fontSize: 20, fontWeight: 700, lineHeight: 1.3, marginTop: 8, marginBottom: 4 }}>{pz.prompt}</div>
-        <div style={{ fontSize: 13, color: "#666", fontFamily: M, marginBottom: 24 }}>Drag to rank: {pz.dir}</div>
+  return e("div", { className: "wrap", style: { touchAction: "pan-x" } },
+    e("div", { className: "inner" },
+      hdr(),
+      e("span", { className: "badge", style: { background: pz.color + "20", border: "1px solid " + pz.color + "40", color: pz.color, marginBottom: 8 } }, pz.icon + " " + pz.cat),
+      e("div", { style: { fontSize: 20, fontWeight: 700, lineHeight: 1.3, marginTop: 8, marginBottom: 4 } }, pz.prompt),
+      e("div", { className: "mono", style: { fontSize: 12, color: "#666", marginBottom: 24 } }, "Drag to rank: " + pz.dir),
 
-        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-          {items.map((item, i) => {
-            const f = fb ? fb[i] : null;
-            const active = dragIdx === i;
-            const green = f && f.em === "🟩";
-            const red = f && f.em === "🟥";
-            return (
-              <div
-                key={item.id}
-                ref={(el) => { refs.current[i] = el; }}
-                onPointerDown={(e) => onDown(e, i)}
-                style={{
-                  background: active ? "rgba(255,255,255,0.1)" : green ? "#22c55e18" : red ? "#ef444418" : "rgba(255,255,255,0.04)",
-                  border: "1.5px solid " + (active ? "rgba(255,255,255,0.3)" : green ? "#22c55e40" : red ? "#ef444440" : "rgba(255,255,255,0.08)"),
-                  borderRadius: 14, padding: "14px 16px", display: "flex", alignItems: "center", gap: 10,
-                  transition: active ? "none" : "all 0.25s cubic-bezier(0.2, 0, 0, 1)",
-                  transform: active ? "translateY(" + dragDy + "px) scale(1.03)" : "scale(1)",
-                  boxShadow: active ? "0 8px 32px rgba(0,0,0,0.4)" : "none",
-                  zIndex: active ? 10 : 1, position: "relative",
-                  userSelect: "none", touchAction: "none",
-                  cursor: f ? "default" : "grab",
-                }}
-              >
-                {!f && <div style={{ color: active ? "#aaa" : "#555", fontSize: 22, flexShrink: 0, lineHeight: 1 }}>⠿</div>}
-                {f && <div style={{ fontSize: 20, flexShrink: 0 }}>{f.em}</div>}
-                <div style={{ fontFamily: M, fontSize: 13, color: "#555", width: 22, flexShrink: 0 }}>{i + 1}.</div>
-                <div style={{ flex: 1, fontSize: 15, fontWeight: 600, lineHeight: 1.3 }}>{item.name}</div>
-                {f && f.diff === 0 && <div style={{ fontFamily: M, fontSize: 12, color: pz.color, flexShrink: 0 }}>{item.val}</div>}
-              </div>
-            );
-          })}
-        </div>
+      items.map(function(item, i) {
+        var f = fb ? fb[i] : null;
+        var active = dragIdx === i;
+        var green = f && f.em === "🟩";
+        var red = f && f.em === "🟥";
+        var bg = active ? "rgba(255,255,255,0.1)" : green ? "rgba(34,197,94,0.1)" : red ? "rgba(239,68,68,0.1)" : "rgba(255,255,255,0.04)";
+        var bdr = active ? "rgba(255,255,255,0.3)" : green ? "rgba(34,197,94,0.25)" : red ? "rgba(239,68,68,0.25)" : "rgba(255,255,255,0.08)";
 
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 20, marginBottom: 12 }}>
-          <div style={{ fontFamily: M, fontSize: 12, color: "#555" }}>Attempt {att}/3</div>
-          <div style={{ display: "flex", gap: 8 }}>
-            {[0, 1, 2].map((i) => <div key={i} style={{ width: 10, height: 10, borderRadius: "50%", background: i < att ? "#fff" : "rgba(255,255,255,0.15)" }} />)}
-          </div>
-        </div>
+        return e("div", {
+          key: item.id,
+          ref: function(el) { elRefs.current[i] = el; },
+          onPointerDown: function(ev) { onDown(ev, i); },
+          className: "item-row" + (active ? " grabbing" : ""),
+          style: {
+            background: bg,
+            border: "1.5px solid " + bdr,
+            transition: active ? "none" : "all 0.2s ease",
+            transform: active ? "translateY(" + dragDy + "px) scale(1.03)" : "scale(1)",
+            boxShadow: active ? "0 8px 32px rgba(0,0,0,0.5)" : "none",
+            zIndex: active ? 10 : 1,
+            cursor: f ? "default" : "grab"
+          }
+        },
+          !f && e("div", { className: "drag-handle", style: { color: active ? "#aaa" : "#555" } }, "⠿"),
+          f && e("div", { style: { fontSize: 18, flexShrink: 0 } }, f.em),
+          e("div", { className: "mono item-num" }, (i+1) + "."),
+          e("div", { className: "item-name" }, item.name),
+          f && f.diff === 0 && e("div", { className: "mono item-val", style: { color: pz.color } }, item.val)
+        );
+      }),
 
-        {!fb && <Btn onClick={submit} style={{ width: "100%", padding: "16px 0" }}>Lock in my order →</Btn>}
-        {fb && !win && att <= 3 && (
-          <div style={{ textAlign: "center", color: "#666", fontSize: 14, fontFamily: M, padding: "12px 0" }}>
-            {att > 3 ? "Revealing correct order..." : "Rearrange and try again..."}
-          </div>
-        )}
-        <div style={{ height: 40 }} />
-      </div>
-    </Wrap>
+      e("div", { className: "attempt-bar" },
+        e("div", { className: "mono", style: { fontSize: 12, color: "#555" } }, "Attempt " + att + "/3"),
+        e("div", { className: "dots" },
+          [0,1,2].map(function(i) {
+            return e("div", { key: i, className: "dot", style: { background: i < att ? "#fff" : "rgba(255,255,255,0.15)" } });
+          })
+        )
+      ),
+
+      !fb && e("button", { className: "btn btn-full", style: { background: "#FAFAFA", color: "#0A0A0A" }, onClick: doSubmit }, "Lock in my order →"),
+      fb && !win && att <= 3 && e("div", { className: "mono", style: { textAlign: "center", color: "#666", fontSize: 13, padding: "12px 0" } }, att > 3 ? "Revealing correct order..." : "Rearrange and try again..."),
+      e("div", { style: { height: 40 } })
+    )
   );
 }
+
+ReactDOM.render(e(App), document.getElementById("app"));
+</script>
+</body>
+</html>
