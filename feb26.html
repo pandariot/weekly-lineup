@@ -90,17 +90,11 @@ function App(){
         setSc("result");
       },1400);
     } else if(at>=3){
-      // Last attempt failed - show feedback, then reveal correct
-      setTimeout(function(){
-        sIt(pz.items.map(function(x,i){return{n:x.n,v:x.v,s:x.s,id:"i"+i};}));
-        sFb(pz.items.map(function(x){return{n:x.n,v:x.v,diff:0,em:"\u{1F7E9}"};}));
-        setTimeout(function(){
-          var o={};o[pz.id]={win:false,att:3,grid:nh};
-          sAr(function(p){return Object.assign({},p,o);});
-          sDn(function(p){return p.concat([pz.id]);});
-          setSc("result");
-        },1400);
-      },1800);
+      // Last attempt - show feedback, let user see it, then they tap to continue
+      var o={};o[pz.id]={win:false,att:3,grid:nh};
+      sAr(function(p){return Object.assign({},p,o);});
+      sDn(function(p){return p.concat([pz.id]);});
+      sWt(true);
     } else {
       // Not last attempt - show feedback, enter waiting mode
       sAt(at + 1);
@@ -110,6 +104,8 @@ function App(){
 
   function onDn(ev,i){
     if(wi) return;
+    // Block dragging after final attempt
+    if(wt&&dn.indexOf(pz.id)>=0) return;
     ev.preventDefault();
     // If in waiting mode (feedback showing), clear it and go back to active
     if(wt){
@@ -296,8 +292,9 @@ function App(){
 
     // Submit button or hint
     showSub&&h("button",{style:{background:"#FAFAFA",color:"#0A0A0A",border:"none",borderRadius:14,padding:"16px 0",width:"100%",fontSize:15,fontWeight:700,cursor:"pointer"},onClick:sub},"Lock in my order \u2192"),
-    wt&&h("div",{className:"m",style:{textAlign:"center",color:"#888",fontSize:12,padding:"14px 0",background:"rgba(255,255,255,0.03)",borderRadius:10}},
+    wt&&dn.indexOf(pz.id)<0&&h("div",{className:"m",style:{textAlign:"center",color:"#888",fontSize:12,padding:"14px 0",background:"rgba(255,255,255,0.03)",borderRadius:10}},
       "\u{1F7E9} = right spot  \u{1F7E5} = wrong spot \u2014 drag to rearrange"),
+    wt&&dn.indexOf(pz.id)>=0&&h("button",{style:{background:"#FAFAFA",color:"#0A0A0A",border:"none",borderRadius:14,padding:"16px 0",width:"100%",fontSize:15,fontWeight:700,cursor:"pointer"},onClick:function(){setSc("result");}},"See results \u2192"),
     h("div",{style:{height:40}})
   ));
 }
